@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
-
+const { pool } = require('../db');
 
 router.get('/', (req, res) => {
     const sql = `
@@ -9,7 +8,7 @@ router.get('/', (req, res) => {
     WHERE active = 1 
     ORDER BY difficulty, end_date`;
 
-    db.query(sql, (err, rows) => {
+    pool.query(sql, (err, rows) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error obteniendo challenges' });
@@ -23,7 +22,7 @@ router.get('/:id', (req, res) => {
 
     const sql = 'SELECT * FROM challenges WHERE id = ?';
 
-    db.query(sql, [id], (err, rows) => {
+    pool.query(sql, [id], (err, rows) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error obteniendo challenge' });
@@ -37,7 +36,6 @@ router.get('/:id', (req, res) => {
     });
 });
 
-
 router.post('/:id/join', (req, res) => {
     const { id } = req.params;
     const { user_id } = req.body;
@@ -46,10 +44,9 @@ router.post('/:id/join', (req, res) => {
         return res.status(400).json({ error: 'user_id requerido' });
     }
 
-
     const checkSql = 'SELECT * FROM challenges WHERE id = ? AND active = 1';
 
-    db.query(checkSql, [id], (err, rows) => {
+    pool.query(checkSql, [id], (err, rows) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error verificando challenge' });
@@ -60,15 +57,13 @@ router.post('/:id/join', (req, res) => {
         }
 
         const sql = `
-        INSERT INTO user_challenges (user_id, challenge_id, status, progress)
-        VALUES (?, ?, 'in_progress', 0)`;
+      INSERT INTO user_challenges (user_id, challenge_id, status, progress)
+      VALUES (?, ?, 'in_progress', 0)
+    `;
 
-        db.query(sql, [user_id, id], (err, result) => {
+        pool.query(sql, [user_id, id], (err, result) => {
             if (err) {
                 console.error(err);
-                if (err.code === 'ER_DUP_ENTRY') {
-                    return res.status(409).json({ error: 'Ya estás en este challenge' });
-                }
                 return res.status(500).json({ error: 'Error uniéndose al challenge' });
             }
             res.status(201).json({
@@ -81,32 +76,32 @@ router.post('/:id/join', (req, res) => {
     });
 });
 
-
 router.get('/user/:userId', (req, res) => {
     const { userId } = req.params;
 
     const sql = `
     SELECT 
-        uc.id,
-        uc.progress,
-        uc.status,
-        uc.joined_at,
-        c.id as challenge_id,
-        c.name,
-        c.description,
-        c.goal_type,
-        c.goal_value,
-        c.reward_points,
-        c.difficulty,
-        c.category,
-        c.start_date,
-        c.end_date
+      uc.id,
+      uc.progress,
+      uc.status,
+      uc.joined_at,
+      c.id as challenge_id,
+      c.name,
+      c.description,
+      c.goal_type,
+      c.goal_value,
+      c.reward_points,
+      c.difficulty,
+      c.category,
+      c.start_date,
+      c.end_date
     FROM user_challenges uc
     JOIN challenges c ON uc.challenge_id = c.id
     WHERE uc.user_id = ?
-    ORDER BY uc.joined_at DESC`;
+    ORDER BY uc.joined_at DESC
+  `;
 
-    db.query(sql, [userId], (err, rows) => {
+    pool.query(sql, [userId], (err, rows) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error obteniendo challenges del usuario' });
@@ -114,7 +109,6 @@ router.get('/user/:userId', (req, res) => {
         res.json(rows);
     });
 });
-
 
 router.put('/user/:userChallengeId/progress', (req, res) => {
     const { userChallengeId } = req.params;
@@ -127,9 +121,10 @@ router.put('/user/:userChallengeId/progress', (req, res) => {
     const sql = `
     UPDATE user_challenges 
     SET progress = ?
-    WHERE id = ?`;
+    WHERE id = ?
+  `;
 
-    db.query(sql, [progress, userChallengeId], (err, result) => {
+    pool.query(sql, [progress, userChallengeId], (err, result) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error actualizando progreso' });

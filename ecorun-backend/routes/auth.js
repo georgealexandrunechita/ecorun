@@ -1,12 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { pool } = require('../db');
 const bcrypt = require('bcrypt');
 const { body } = require('express-validator');
 const validateRequest = require('../middleware/validateRequest');
 
 
-router.post('/register',
+router.post(
+    '/register',
     [
         body('username')
             .trim()
@@ -33,7 +34,7 @@ router.post('/register',
         INSERT INTO users (username, email, password_hash, role, eco_points)
         VALUES (?, ?, ?, 'user', 0)`;
 
-            db.query(sql, [username, email, passwordHash], (err, result) => {
+            pool.query(sql, [username, email, passwordHash], (err, result) => {
                 if (err) {
                     console.error(err);
                     if (err.code === 'ER_DUP_ENTRY') {
@@ -56,16 +57,14 @@ router.post('/register',
     }
 );
 
-
-router.post('/login',
+router.post(
+    '/login',
     [
         body('email')
             .isEmail()
             .normalizeEmail()
             .withMessage('Email inválido'),
-        body('password')
-            .notEmpty()
-            .withMessage('Password requerido')
+        body('password').notEmpty().withMessage('Password requerido')
     ],
     validateRequest,
     (req, res) => {
@@ -73,7 +72,7 @@ router.post('/login',
 
         const sql = 'SELECT * FROM users WHERE email = ? LIMIT 1';
 
-        db.query(sql, [email], async (err, rows) => {
+        pool.query(sql, [email], async (err, rows) => {
             if (err) {
                 console.error(err);
                 return res.status(500).json({ error: 'Error en la base de datos' });
@@ -106,13 +105,13 @@ router.post('/login',
     }
 );
 
-
 router.get('/user/:id', (req, res) => {
     const { id } = req.params;
 
-    const sql = 'SELECT id, username, email, eco_points, role, created_at FROM users WHERE id = ?';
+    const sql =
+        'SELECT id, username, email, eco_points, role, created_at FROM users WHERE id = ?';
 
-    db.query(sql, [id], (err, rows) => {
+    pool.query(sql, [id], (err, rows) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error en la base de datos' });
