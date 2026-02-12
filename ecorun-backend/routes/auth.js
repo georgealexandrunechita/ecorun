@@ -34,95 +34,82 @@ router.post(
         INSERT INTO users (username, email, password_hash, role, eco_points)
         VALUES (?, ?, ?, 'user', 0)`;
 
-            pool.query(sql, [username, email, passwordHash], (err, result) => {
-                if (err) {
-                    console.error(err);
-                    if (err.code === 'ER_DUP_ENTRY') {
-                        return res.status(409).json({ error: 'Username o email ya existen' });
-                    }
-                    return res.status(500).json({ error: 'Error en la base de datos' });
-                }
+            const [result] = await pool.query(sql, [username, email, passwordHash]);
 
-                res.status(201).json({
-                    id: result.insertId,
-                    username,
-                    email,
-                    message: 'Usuario registrado exitosamente'
-                });
+            return res.status(201).json({
+                id: result.insertId,
+                username,
+                email,
+                message: 'Usuario registrado exitosamente'
             });
-        } catch (e) {
-            console.error(e);
-            res.status(500).json({ error: 'Error interno del servidor' });
+        } catch (err) {
+            console.error(err);
+            if (err.code === 'ER_DUP_ENTRY') {
+                return res.status(409).json({ error: 'Username o email ya existen' });
+            }
+            return res.status(500).json({ error: 'Error en la base de datos' });
         }
     }
 );
 
+
 router.post(
     '/login',
     [
-        body('email')
-            .isEmail()
-            .normalizeEmail()
-            .withMessage('Email inválido'),
+        body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
         body('password').notEmpty().withMessage('Password requerido')
     ],
     validateRequest,
-    (req, res) => {
+    async (req, res) => {
         const { email, password } = req.body;
 
-        const sql = 'SELECT * FROM users WHERE email = ? LIMIT 1';
-
-        pool.query(sql, [email], async (err, rows) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: 'Error en la base de datos' });
-            }
+        try {
+            const sql = 'SELECT * FROM users WHERE email = ? LIMIT 1';
+            const [rows] = await pool.query(sql, [email]);
 
             if (rows.length === 0) {
                 return res.status(401).json({ error: 'Credenciales inválidas' });
             }
 
             const user = rows[0];
-
-            try {
-                const passwordMatch = await bcrypt.compare(password, user.password_hash);
-
-                if (!passwordMatch) {
-                    return res.status(401).json({ error: 'Credenciales inválidas' });
-                }
-
-                const { password_hash, ...userWithoutPassword } = user;
-
-                res.json({
-                    message: 'Login exitoso',
-                    user: userWithoutPassword
-                });
-            } catch (e) {
-                console.error(e);
-                res.status(500).json({ error: 'Error interno del servidor' });
+            const ok = await bcrypt.compare(password, user.password_hash);
+            if (!ok) {
+                return res.status(401).json({ error: 'Credenciales inválidas' });
             }
-        });
-    }
-);
 
-router.get('/user/:id', (req, res) => {
-    const { id } = req.params;
+            const { password_hash, ...userWithoutPassword } = user;
 
-    const sql =
-        'SELECT id, username, email, eco_points, role, created_at FROM users WHERE id = ?';
-
-    pool.query(sql, [id], (err, rows) => {
-        if (err) {
+            return res.json({
+                message: 'Login exitoso',
+                user: userWithoutPassword
+            });
+        } catch (err) {
             console.error(err);
             return res.status(500).json({ error: 'Error en la base de datos' });
         }
+    }
+);
+
+router.get('/user/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const sql = `
+        SELECT id, username, email, eco_points, role, created_at
+        FROM users
+        WHERE id = ?
+    `;
+        const [rows] = await pool.query(sql, [id]);
 
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Usuario no encontrado' });
         }
 
-        res.json(rows[0]);
-    });
+        return res.json(rows[0]);
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: 'Error en la base de datos' });
+    }
 });
 
 module.exports = router;

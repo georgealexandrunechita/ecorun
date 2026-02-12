@@ -3,13 +3,13 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
+const { testConnection } = require('./db');
 const authRoutes = require('./routes/auth');
 const runsRoutes = require('./routes/runs');
 const challengesRoutes = require('./routes/challenges');
 const errorHandler = require('./middleware/errorHandler');
 
 const PORT = process.env.PORT || 8080;
-
 
 app.use(cors());
 app.use(express.json());
@@ -31,12 +31,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/runs', runsRoutes);
 app.use('/api/challenges', challengesRoutes);
 
+
 app.use((req, res) => {
     res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+
+app.listen(PORT, async () => {
     console.log(`Servidor: http://localhost:${PORT}`);
+    await testConnection(); 
 });

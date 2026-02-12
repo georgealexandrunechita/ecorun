@@ -1,26 +1,56 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../db');
-const { body } = require('express-validator');
+const { body, param } = require('express-validator');
 const validateRequest = require('../middleware/validateRequest');
+
 
 router.post(
   '/',
   [
-    body('user_id').isInt().withMessage('user_id debe ser un número'),
-    body('run_name').trim().notEmpty().withMessage('run_name es requerido'),
+    body('user_id')
+      .isInt({ min: 1 })
+      .withMessage('user_id debe ser un número entero positivo'),
+
+    body('run_name')
+      .trim()
+      .notEmpty()
+      .withMessage('run_name es requerido')
+      .isLength({ max: 100 })
+      .withMessage('run_name no puede tener más de 100 caracteres'),
+
+    body('description')
+      .optional()
+      .isString()
+      .withMessage('description debe ser texto'),
+
     body('distance_km')
-      .isFloat({ min: 0.1 })
+      .isFloat({ gt: 0 })
       .withMessage('distance_km debe ser mayor a 0'),
+
     body('duration_minutes')
       .isInt({ min: 1 })
       .withMessage('duration_minutes debe ser mayor a 0'),
-    body('start_time').isISO8601().withMessage('start_time debe ser una fecha válida'),
-    body('end_time').isISO8601().withMessage('end_time debe ser una fecha válida'),
-    body('run_date').isISO8601().withMessage('run_date debe ser una fecha válida')
+
+    body('start_time')
+      .isISO8601()
+      .withMessage('start_time debe ser una fecha/hora válida'),
+
+    body('end_time')
+      .isISO8601()
+      .withMessage('end_time debe ser una fecha/hora válida'),
+
+    body('run_date')
+      .isISO8601()
+      .withMessage('run_date debe ser una fecha/hora válida'),
+
+    body('points_earned')
+      .optional()
+      .isInt({ min: 0 })
+      .withMessage('points_earned debe ser un entero >= 0')
   ],
   validateRequest,
-  (req, res) => {
+  async (req, res) => {
     const {
       user_id,
       run_name,
@@ -33,17 +63,19 @@ router.post(
       points_earned
     } = req.body;
 
-    const sql = `
-      INSERT INTO runs
-      (user_id, run_name, description, distance_km, duration_minutes, start_time, end_time, run_date, points_earned)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    try {
+      const calculatedPoints =
+        typeof points_earned === 'number'
+          ? points_earned
+          : Math.round(Number(distance_km) * 10);
 
-    const calculatedPoints = points_earned || Math.round(distance_km * 10);
+      const sql = `
+        INSERT INTO runs
+          (user_id, run_name, description, distance_km, duration_minutes, start_time, end_time, run_date, points_earned)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-    pool.query(
-      sql,
-      [
+      const [result] = await pool.query(sql, [
         user_id,
         run_name,
         description || null,
@@ -53,78 +85,104 @@ router.post(
         end_time,
         run_date,
         calculatedPoints
-      ],
-      (err, result) => {
-        if (err) {
-          console.error('Error insertando run:', err);
-          return res.status(500).json({ error: 'Error en la base de datos' });
-        }
+      ]);
 
-        res.status(201).json({
-          id: result.insertId,
-          points_earned: calculatedPoints,
-          message: 'Run creado exitosamente'
-        });
-      }
-    );
+      return res.status(201).json({
+        id: result.insertId,
+        user_id,
+        run_name,
+        description: description || null,
+        distance_km,
+        duration_minutes,
+        start_time,
+        end_time,
+        run_date,
+        points_earned: calculatedPoints,
+        message: 'Run creado exitosamente'
+      });
+    } catch (err) {
+      console.error('Error insertando run:', err);
+      return res.status(500).json({ error: 'Error en la base de datos' });
+    }
   }
 );
 
-router.get('/user/:userId', (req, res) => {
-  const { userId } = req.params;
+router.get(
+  '/user/:userId',
+  [param('userId').isInt({ min: 1 }).withMessage('userId debe ser un entero positivo')],
+  validateRequest,
+  async (req, res) => {
+    const { userId } = req.params;
 
-  const sql = `
-    SELECT *
-    FROM runs
-    WHERE user_id = ?
-    ORDER BY run_date DESC
-  `;
+    try {
+      const sql = `
+        SELECT id, user_id, run_name, description, distance_km, duration_minutes,
+        start_time, end_time, run_date, points_earned, created_at
+        FROM runs
+        WHERE user_id = ?
+        ORDER BY run_date DESC, id DESC
+      `;
 
-  pool.query(sql, [userId], (err, rows) => {
-    if (err) {
+      const [rows] = await pool.query(sql, [userId]);
+      return res.json(rows);
+    } catch (err) {
       console.error('Error obteniendo runs:', err);
       return res.status(500).json({ error: 'Error en la base de datos' });
     }
-    res.json(rows);
-  });
-});
+  }
+);
 
-router.get('/:id', (req, res) => {
-  const { id } = req.params;
 
-  const sql = 'SELECT * FROM runs WHERE id = ?';
+router.get(
+  '/:id',
+  [param('id').isInt({ min: 1 }).withMessage('id debe ser un entero positivo')],
+  validateRequest,
+  async (req, res) => {
+    const { id } = req.params;
 
-  pool.query(sql, [id], (err, rows) => {
-    if (err) {
+    try {
+      const sql = `
+        SELECT id, user_id, run_name, description, distance_km, duration_minutes,
+        start_time, end_time, run_date, points_earned, created_at
+        FROM runs
+        WHERE id = ?
+      `;
+
+      const [rows] = await pool.query(sql, [id]);
+
+      if (rows.length === 0) {
+        return res.status(404).json({ error: 'Run no encontrado' });
+      }
+
+      return res.json(rows[0]);
+    } catch (err) {
       console.error('Error obteniendo run:', err);
       return res.status(500).json({ error: 'Error en la base de datos' });
     }
+  }
+);
 
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Run no encontrado' });
-    }
+router.delete(
+  '/:id',
+  [param('id').isInt({ min: 1 }).withMessage('id debe ser un entero positivo')],
+  validateRequest,
+  async (req, res) => {
+    const { id } = req.params;
 
-    res.json(rows[0]);
-  });
-});
+    try {
+      const sql = 'DELETE FROM runs WHERE id = ?';
+      const [result] = await pool.query(sql, [id]);
 
-router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Run no encontrado' });
+      }
 
-  const sql = 'DELETE FROM runs WHERE id = ?';
-
-  pool.query(sql, [id], (err, result) => {
-    if (err) {
+      return res.json({ message: 'Run eliminado exitosamente' });
+    } catch (err) {
       console.error('Error eliminando run:', err);
       return res.status(500).json({ error: 'Error en la base de datos' });
     }
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ error: 'Run no encontrado' });
-    }
-
-    res.json({ message: 'Run eliminado exitosamente' });
-  });
-});
+  }
+);
 
 module.exports = router;
